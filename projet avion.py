@@ -176,6 +176,9 @@ while True:
            distance = sonar.distance
            if (distance < 10):
                 current_state ==1
+               
+            if code == 0000:
+                print("Aéroport avisé")
             
             # Si le bouton est appuyé, verrouiller/déverrouiller les contrôles
            if not button.value:
@@ -222,6 +225,7 @@ while True:
             
 
            time.sleep(0.1)
+
 
 
 
