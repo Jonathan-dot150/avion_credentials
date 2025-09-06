@@ -65,7 +65,7 @@ sonar = adafruit_hcsr04.HCSR04(trigger_pin=board.RX, echo_pin=board.TX)
 # Identifiants autorisés
 AUTHORIZED_IDS = ["6d1a64382b"], ["7dsO97Nd2L"], ["2Dohs719Kq"], ["9Hfs61Lnd6"]
 
-
+AUTHORIZED_DOUBLEAUTH = ["7382"], ["9210"], ["2824"], ["4021"]
 
 
 # Initialisation de la Neopixel
@@ -122,8 +122,11 @@ while True:
                 print("Identifiant de la carte: ", uid_hex)
                 # Vérifier si l'identifiant est autorisé
                 if uid_hex in AUTHORIZED_IDS:
-                    print("Accès autorisé !")
-                    current_state = 2
+                    DoubleAuth= print("Entrez votre double Authentification: ")
+                    if DoubleAuth in AUTHORIZED_DOUBLEAUTH:
+                        print("Accès autorisé !")
+                        current_state = 2
+                    else: print("Accès refusé.")
                 else:
                     print("Accès refusé.")
                     
@@ -216,4 +219,5 @@ while True:
             
 
            time.sleep(0.1)
+
 
