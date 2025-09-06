@@ -14,6 +14,15 @@ import math
 import digitalio
 
 
+access_attempts = []
+failed_attempts_count = 0
+MAX_FAILED_ATTEMPTS = 3
+LOCKOUT_TIME = 30  # 30 secondes de verrouillage après trop de tentatives
+# Couleurs pour les alertes
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+ORANGE = (255, 165, 0)
+BLUE = (0, 0, 255)
 
 rfidRST = board.A2
 rfidSCK = board.D12
@@ -111,7 +120,150 @@ AIRPORTS = {
     "912": "MAD Madrid-Barajas",
     "927": "YVR Vancouver"
 }
+def log_access_attempt(uid, success, airport_code=None):
+    """Enregistre une tentative d'accès dans l'historique"""
+    global access_attempts
+    timestamp = time.monotonic()
+    attempt = {
+        'timestamp': timestamp,
+        'uid': uid,
+        'success': success,
+        'airport_code': airport_code
+    }
+    access_attempts.append(attempt)
+    
+    # Garder seulement les 50 dernières tentatives
+    if len(access_attempts) > 50:
+        access_attempts.pop(0)
+    
+    print(f"[LOG] Tentative d'accès - UID: {uid}, Succès: {success}")
 
+def check_security_status():
+    """Vérifie le statut de sécurité basé sur les tentatives récentes"""
+    global failed_attempts_count
+    current_time = time.monotonic()
+    
+    # Compter les échecs dans les 60 dernières secondes
+    recent_failures = 0
+    for attempt in access_attempts:
+        if (current_time - attempt['timestamp'] < 60) and not attempt['success']:
+            recent_failures += 1
+    
+    failed_attempts_count = recent_failures
+    return failed_attempts_count >= MAX_FAILED_ATTEMPTS
+
+def display_security_alert(alert_type):
+    """Affiche une alerte de sécurité sur les NeoPixels"""
+    if alert_type == "lockout":
+        # Clignotement rouge pour verrouillage
+        for _ in range(5):
+            pixels.fill(RED)
+            pixels.show()
+            time.sleep(0.3)
+            pixels.fill((0, 0, 0))
+            pixels.show()
+            time.sleep(0.3)
+    elif alert_type == "success":
+        # Animation verte pour accès autorisé
+        for i in range(num_pixels):
+            pixels[i] = GREEN
+            pixels.show()
+            time.sleep(0.1)
+        time.sleep(1)
+        pixels.fill((0, 0, 0))
+        pixels.show()
+    elif alert_type == "warning":
+        # Orange pour avertissement
+        pixels.fill(ORANGE)
+        pixels.show()
+        time.sleep(1)
+        pixels.fill((0, 0, 0))
+        pixels.show()
+
+def is_system_locked():
+    """Vérifie si le système est en mode verrouillage"""
+    if not access_attempts:
+        return False
+    
+    current_time = time.monotonic()
+    last_attempt = access_attempts[-1]
+    
+    # Si trop de tentatives échouées et pas assez de temps écoulé
+    if (failed_attempts_count >= MAX_FAILED_ATTEMPTS and 
+        current_time - last_attempt['timestamp'] < LOCKOUT_TIME):
+        return True
+    return False
+
+def get_access_statistics():
+    """Retourne des statistiques d'accès"""
+    total_attempts = len(access_attempts)
+    successful_attempts = sum(1 for attempt in access_attempts if attempt['success'])
+    failed_attempts = total_attempts - successful_attempts
+    
+    return {
+        'total': total_attempts,
+        'success': successful_attempts,
+        'failed': failed_attempts,
+        'success_rate': (successful_attempts / total_attempts * 100) if total_attempts > 0 else 0
+    }
+
+def display_statistics():
+    """Affiche les statistiques d'accès"""
+    stats = get_access_statistics()
+    print("\n=== STATISTIQUES D'ACCÈS ===")
+    print(f"Total des tentatives: {stats['total']}")
+    print(f"Tentatives réussies: {stats['success']}")
+    print(f"Tentatives échouées: {stats['failed']}")
+    print(f"Taux de réussite: {stats['success_rate']:.1f}%")
+    print("============================\n")
+
+def enhanced_rfid_check(uid_hex):
+    """Version améliorée de la vérification RFID avec logging"""
+    
+    # Vérifier si le système est verrouillé
+    if is_system_locked():
+        print("⚠️  SYSTÈME VERROUILLÉ - Trop de tentatives échouées!")
+        print(f"Veuillez attendre {LOCKOUT_TIME} secondes.")
+        display_security_alert("lockout")
+        return False
+    
+    # Vérifier l'autorisation
+    if uid_hex in AUTHORIZED_IDS:
+        log_access_attempt(uid_hex, True)
+        display_security_alert("success")
+        print("✅ Accès autorisé !")
+        return True
+    else:
+        log_access_attempt(uid_hex, False)
+        
+        # Vérifier si c'est une situation critique
+        if check_security_status():
+            print("🚨 ALERTE SÉCURITÉ - Trop de tentatives échouées!")
+            display_security_alert("lockout")
+        else:
+            display_security_alert("warning")
+        
+        print("❌ Accès refusé.")
+        return False
+
+# Commande pour afficher les statistiques (à ajouter dans le menu principal)
+def show_admin_menu():
+    """Menu administrateur pour voir les statistiques"""
+    print("\n=== MENU ADMINISTRATEUR ===")
+    print("Appuyez sur le joystick pendant 3 secondes pour voir les statistiques")
+    
+    button_press_time = 0
+    while True:
+        if not button.value:  # Bouton appuyé
+            if button_press_time == 0:
+                button_press_time = time.monotonic()
+            elif time.monotonic() - button_press_time >= 3:
+                display_statistics()
+                break
+        else:
+            button_press_time = 0
+        
+        time.sleep(0.1)
 while True:
     if current_state == 1:
         print("En attente d'une carte RFID...")
@@ -124,16 +276,23 @@ while True:
                 uid_hex = ''.join('{:02x}'.format(x) for x in raw_uid)
                 print("Identifiant de la carte: ", uid_hex)
                 # Vérifier si l'identifiant est autorisé
-                if uid_hex in AUTHORIZED_IDS:
-                    DoubleAuth= print("Entrez votre double Authentification: ")
-                    if DoubleAuth in AUTHORIZED_DOUBLEAUTH:
-                        print("Accès autorisé !")
-                        current_state = 2
-                    else: print("Accès refusé.")
-                else:
-                    print("Accès refusé.")
+                # if uid_hex in AUTHORIZED_IDS:
+                #     DoubleAuth= print("Entrez votre double Authentification: ")
+                #     if DoubleAuth in AUTHORIZED_DOUBLEAUTH:
+                #         print("Accès autorisé !")
+                #         current_state = 2
+                #     else: print("Accès refusé.")
+                # else:
+                #     print("Accès refusé.")
                     
+                # Au lieu de :
+                if uid_hex in AUTHORIZED_IDS:
+                    print("Accès autorisé !")
+                    current_state = 2
 
+                # Utiliser :
+                if enhanced_rfid_check(uid_hex):
+                    current_state = 2
     elif current_state == 2:
         print("Entrez le code de l'aeroport:")
 # Attendre que le code de l'aéroport soit entré via le clavier matriciel
@@ -177,8 +336,11 @@ while True:
            if (distance < 10):
                 current_state ==1
                
-            if code == 0000:
+           if code == 0000:
                 print("Aéroport avisé")
+
+           if code == "999":  # Code administrateur
+                show_admin_menu()
             
             # Si le bouton est appuyé, verrouiller/déverrouiller les contrôles
            if not button.value:
