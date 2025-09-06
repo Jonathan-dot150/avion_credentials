@@ -107,6 +107,9 @@ AIRPORTS = {
     "492": "CAN Baiyun",
     "174": "CDG Paris",
     "523": "AMS Amsterdam",
+    "829": "FRA Frabcfort",
+    "912": "MAD Madrid-Barajas",
+    "927": "YVR Vancouver"
 }
 
 while True:
@@ -219,5 +222,6 @@ while True:
             
 
            time.sleep(0.1)
+
 
 
